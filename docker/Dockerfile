@@ -7,7 +7,12 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# Install all dependencies (including devDependencies for tsc, vite, etc.).
+# Pre-install blog-site dependencies so the postinstall script succeeds.
+# (postinstall runs `cd blog-site && npm ci --prefer-offline` during root npm ci)
+COPY blog-site/package.json blog-site/package-lock.json ./blog-site/
+RUN cd blog-site && npm ci
+
+# Install root dependencies — postinstall will find blog-site/node_modules already in place.
 COPY package.json package-lock.json ./
 RUN npm ci --include=dev
 
@@ -44,5 +49,3 @@ RUN chmod +x /docker-entrypoint.sh
 EXPOSE 8080
 
 CMD ["/docker-entrypoint.sh"]
-
-
