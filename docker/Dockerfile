@@ -1,6 +1,5 @@
 # syntax=docker/dockerfile:1.7
-
-# Multi-stage build for the World Monitor web app (frontend only).
+# Railway root Dockerfile — cache bust comment
 
 # Stage 1: Build the frontend with TypeScript + Vite.
 FROM node:20-alpine AS builder
@@ -8,44 +7,38 @@ FROM node:20-alpine AS builder
 WORKDIR /app
 
 # Pre-install blog-site dependencies so the postinstall script succeeds.
-# (postinstall runs `cd blog-site && npm ci --prefer-offline` during root npm ci)
+# postinstall runs: cd blog-site && npm ci --prefer-offline
 COPY blog-site/package.json blog-site/package-lock.json ./blog-site/
 RUN cd blog-site && npm ci
 
-# Install root dependencies — postinstall will find blog-site/node_modules already in place.
+# Install root dependencies — postinstall finds blog-site/node_modules already in place.
 COPY package.json package-lock.json ./
 RUN npm ci --include=dev
 
 # Copy source and build.
 COPY . .
 
-# Build-time configuration. Pass via --build-arg. Other VITE_* vars (e.g. VITE_PMTILES_URL)
-# can be added here or via --build-arg for custom builds; see .env.example for the full list.
 ARG VITE_VARIANT=full
 ARG VITE_WS_API_URL=https://api.worldmonitor.app
-
 ENV VITE_VARIANT=${VITE_VARIANT}
 ENV VITE_WS_API_URL=${VITE_WS_API_URL}
 
-# tsc + vite build (see package.json "build" script)
 RUN npm run build
 
 
-# Stage 2: Serve the built assets from nginx.
+# Stage 2: Serve built assets from nginx.
 FROM nginx:alpine AS runtime
 
 WORKDIR /usr/share/nginx/html
 
 ENV API_UPSTREAM=https://api.worldmonitor.app
 
-# Copy built assets, nginx template (API_UPSTREAM substituted at startup), and entrypoint.
 COPY --from=builder /app/dist/ ./
 COPY docker/nginx.conf.template /etc/nginx/nginx.conf.template
 COPY docker/nginx-security-headers.conf /etc/nginx/security_headers.conf
 COPY docker/docker-entrypoint.sh /docker-entrypoint.sh
 RUN chmod +x /docker-entrypoint.sh
 
-# Railway uses a dynamic PORT (default 8080); nginx listens on $PORT via entrypoint
 EXPOSE 8080
 
 CMD ["/docker-entrypoint.sh"]
